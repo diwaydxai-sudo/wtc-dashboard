@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WTC Social Growth Command Center</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        reddit: '#FF4500',
+                        twitter: '#1DA1F2',
+                        threads: '#000000'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        [x-cloak] { display: none !important; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        .modal-backdrop { background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen" x-data="dashboard()" x-init="init()">
+    
+    <!-- Header -->
+    <header class="border-b border-gray-800 bg-gray-900/80 backdrop-blur-sm sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center space-x-3">
+                    <span class="text-2xl">☕</span>
+                    <h1 class="text-xl font-bold text-white">WTC Growth Command Center</h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <span class="text-sm text-gray-400" x-text="currentTime"></span>
+                    <span x-show="loading" class="text-xs text-indigo-400 animate-pulse">Fetching...</span>
+                    <button @click="refreshAll()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-sm font-medium transition-colors flex items-center space-x-2" :disabled="loading">
+                        <span>🔄</span>
+                        <span>Refresh</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        
+        <!-- Account Status Bar -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <template x-for="(account, idx) in accounts" :key="account.platform">
+                <div class="bg-gray-900 rounded-xl p-4 border border-gray-800 hover:border-gray-700 transition-all cursor-pointer" @click="editAccount(idx)">
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="flex items-center space-x-3">
+                            <span class="text-2xl" x-text="account.icon"></span>
+                            <div>
+                                <p class="font-semibold text-white" x-text="account.platform"></p>
+                                <p class="text-xs text-gray-500" x-text="account.handle || 'Click to set up'"></p>
+                            </div>
+                        </div>
+                        <span class="text-xs px-2 py-1 rounded-full font-medium"
+                              :class="{
+                                  'bg-emerald-500/20 text-emerald-400': account.status === 'ready',
+                                  'bg-yellow-500/20 text-yellow-400': account.status === 'seasoning',
+                                  'bg-red-500/20 text-red-400': account.status === 'new'
+                              }"
+                              x-text="account.status"></span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3 text-sm">
+                        <div class="bg-gray-800/50 rounded-lg p-2">
+                            <p class="text-gray-400 text-xs" x-text="account.metric1Label"></p>
+                            <p class="text-white font-bold" x-text="account.metric1"></p>
+                        </div>
+                        <div class="bg-gray-800/50 rounded-lg p-2">
+                            <p class="text-gray-400 text-xs" x-text="account.metric2Label"></p>
+                            <p class="text-white font-bold" x-text="account.metric2"></p>
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-gray-400">Account Health</span>
+                            <span class="text-white" x-text="account.health + '%'"></span>
+                        </div>
+                        <div class="h-2 bg-gray-800 rounded-full overflow-hidden">
+                            <div class="h-full rounded-full transition-all duration-500"
+                                 :class="{
+                                     'bg-emerald-500': account.health >= 70,
+                                     'bg-yellow-500': account.health >= 40 && account.health < 70,
+                                     'bg-red-500': account.health < 40
+                                 }"
+                                 :style="'width: ' + account.health + '%'"></div>
+                        </div>
+                    </div>
+                    <p class="text-xs text-gray-600 mt-2 text-center">Click to edit</p>
+                </div>
+            </template>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+            
+            <!-- Trending Posts Monitor - LIVE DATA -->
+            <div class="lg:col-span-2 bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+                <div class="p-4 border-b border-gray-800 flex items-center justify-between">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xl">🔥</span>
+                        <h2 class="text-lg font-semibold">Trending Now</h2>
+                        <span class="text-xs text-gray-500" x-text="'(' + trendingPosts.length + ' posts)'"></span>
+                    </div>
+                    <div class="flex space-x-2">
+                        <button @click="trendingFilter = 'all'" 
+                                :class="trendingFilter === 'all' ? 'bg-indigo-600' : 'bg-gray-800'"
+                                class="px-3 py-1 rounded-lg text-xs font-medium transition-colors">All</button>
+                        <button @click="trendingFilter = 'reddit'" 
+                                :class="trendingFilter === 'reddit' ? 'bg-orange-600' : 'bg-gray-800'"
+                                class="px-3 py-1 rounded-lg text-xs font-medium transition-colors">Reddit</button>
+                        <button @click="trendingFilter = 'twitter'" 
+                                :class="trendingFilter === 'twitter' ? 'bg-blue-600' : 'bg-gray-800'"
+                                class="px-3 py-1 rounded-lg text-xs font-medium transition-colors">X</button>
+                        <button @click="trendingFilter = 'threads'" 
+                                :class="trendingFilter === 'threads' ? 'bg-pink-600' : 'bg-gray-800'"
+                                class="px-3 py-1 rounded-lg text-xs font-medium transition-colors">Threads</button>
+                    </div>
+                </div>
+                <div class="divide-y divide-gray-800 max-h-96 overflow-y-auto scrollbar-hide">
+                    <template x-if="filteredTrending.length === 0 && !loading">
+                        <div class="p-8 text-center text-gray-500">
+                            <p x-show="fetchError" class="text-red-400 mb-2" x-text="fetchError"></p>
+                            <p>No posts loaded yet. Click Refresh to fetch live data from Reddit.</p>
+                            <button @click="refreshAll()" class="mt-3 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-sm text-white">
+                                🔄 Fetch Now
+                            </button>
+                        </div>
+                    </template>
+                    <template x-if="loading">
+                        <div class="p-8 text-center text-gray-500">
+                            <p class="animate-pulse">⏳ Fetching posts from Reddit...</p>
+                        </div>
+                    </template>
+                    <template x-for="post in filteredTrending" :key="post.id">
+                        <div class="p-4 hover:bg-gray-800/50 transition-colors">
+                            <div class="flex items-start space-x-3">
+                                <span class="text-xl mt-1" x-text="post.platformIcon"></span>
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center space-x-2 mb-1">
+                                        <span class="text-xs text-gray-500" x-text="post.source"></span>
+                                        <span class="text-xs text-gray-600">•</span>
+                                        <span class="text-xs text-gray-500" x-text="post.time"></span>
+                                    </div>
+                                    <a :href="post.url" target="_blank" class="text-sm text-white mb-2 line-clamp-2 hover:text-indigo-400 block" x-text="post.title"></a>
+                                    <div class="flex items-center space-x-4 text-xs text-gray-400">
+                                        <span class="flex items-center space-x-1">
+                                            <span>⬆️</span>
+                                            <span x-text="formatNumber(post.upvotes)"></span>
+                                        </span>
+                                        <span class="flex items-center space-x-1">
+                                            <span>💬</span>
+                                            <span x-text="formatNumber(post.comments)"></span>
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="text-right flex flex-col items-end space-y-2">
+                                    <div class="px-2 py-1 rounded-lg text-xs font-bold"
+                                         :class="{
+                                             'bg-emerald-500/20 text-emerald-400': post.viralScore >= 80,
+                                             'bg-yellow-500/20 text-yellow-400': post.viralScore >= 60 && post.viralScore < 80,
+                                             'bg-gray-500/20 text-gray-400': post.viralScore < 60
+                                         }">
+                                        <span x-text="post.viralScore"></span>
+                                        <span class="text-xs font-normal opacity-70">vs</span>
+                                    </div>
+                                    <button @click="remixPost(post)" class="text-xs text-indigo-400 hover:text-indigo-300">
+                                        Remix →
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Quick Actions & Viral Patterns -->
+            <div class="space-y-6">
+                <!-- Quick Actions -->
+                <div class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+                    <h3 class="text-sm font-semibold text-gray-400 mb-3">⚡ Quick Actions</h3>
+                    <div class="space-y-2">
+                        <button @click="openDraftModal()" class="w-full p-3 bg-gray-800 hover:bg-gray-700 rounded-lg text-left transition-colors flex items-center space-x-3">
+                            <span>📝</span>
+                            <span class="text-sm">Draft New Post</span>
+                        </button>
+                        <button @click="refreshAll()" class="w-full p-3 bg-gray-800 hover:bg-gray-700 rounded-lg text-left transition-colors flex items-center space-x-3">
+                            <span>🎯</span>
+                            <span class="text-sm">Fetch Trending Topics</span>
+                        </button>
+                        <button @click="showSubreddits = !showSubreddits" class="w-full p-3 bg-gray-800 hover:bg-gray-700 rounded-lg text-left transition-colors flex items-center space-x-3">
+                            <span>🔶</span>
+                            <span class="text-sm">Manage Subreddits</span>
+                        </button>
+                        <button @click="exportData()" class="w-full p-3 bg-gray-800 hover:bg-gray-700 rounded-lg text-left transition-colors flex items-center space-x-3">
+                            <span>💾</span>
+                            <span class="text-sm">Export Data</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Subreddit Manager -->
+                <div x-show="showSubreddits" x-transition class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+                    <h3 class="text-sm font-semibold text-gray-400 mb-3">🔶 Tracked Subreddits</h3>
+                    <div class="space-y-2 mb-3">
+                        <template x-for="(sub, idx) in subreddits" :key="sub">
+                            <div class="flex items-center justify-between bg-gray-800/50 rounded-lg px-3 py-2">
+                                <span class="text-sm">r/<span x-text="sub"></span></span>
+                                <button @click="removeSubreddit(idx)" class="text-red-400 hover:text-red-300 text-xs">✕</button>
+                            </div>
+                        </template>
+                    </div>
+                    <div class="flex space-x-2">
+                        <input type="text" x-model="newSubreddit" @keyup.enter="addSubreddit()" placeholder="Add subreddit..." class="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm focus:outline-none focus:border-indigo-500">
+                        <button @click="addSubreddit()" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-sm">Add</button>
+                    </div>
+                </div>
+
+                <!-- Top Viral Patterns -->
+                <div class="bg-gray-900 rounded-xl p-4 border border-gray-800">
+                    <h3 class="text-sm font-semibold text-gray-400 mb-3">🧬 Hot Patterns Today</h3>
+                    <div class="space-y-2">
+                        <template x-for="pattern in topPatterns" :key="pattern.name">
+                            <div @click="usePattern(pattern)" class="p-3 bg-gray-800/50 rounded-lg flex items-center justify-between cursor-pointer hover:bg-gray-800">
+                                <div class="flex items-center space-x-2">
+                                    <span x-text="pattern.icon"></span>
+                                    <span class="text-sm" x-text="pattern.name"></span>
+                                </div>
+                                <span class="text-xs px-2 py-1 bg-emerald-500/20 text-emerald-400 rounded-full" 
+                                      x-text="pattern.successRate + '%'"></span>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scheduled Posts -->
+        <div class="bg-gray-900 rounded-xl border border-gray-800 mb-6">
+            <div class="p-4 border-b border-gray-800 flex items-center justify-between">
+                <div class="flex items-center space-x-2">
+                    <span class="text-xl">📅</span>
+                    <h2 class="text-lg font-semibold">Scheduled Posts</h2>
+                    <span class="text-xs text-gray-500" x-text="'(' + scheduledPosts.length + ' posts)'"></span>
+                </div>
+                <button @click="openDraftModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-sm font-medium transition-colors">
+                    + New Post
+                </button>
+            </div>
+
+            <div class="p-4">
+                <template x-if="scheduledPosts.length === 0">
+                    <div class="text-center py-8 text-gray-500">
+                        <p>No scheduled posts yet. Click "+ New Post" to create one.</p>
+                    </div>
+                </template>
+                <div class="space-y-3">
+                    <template x-for="(post, idx) in scheduledPosts" :key="post.id">
+                        <div class="p-4 bg-gray-800/50 rounded-lg border-l-4 flex items-start justify-between"
+                             :class="{
+                                 'border-orange-500': post.platform === 'reddit',
+                                 'border-blue-500': post.platform === 'twitter',
+                                 'border-pink-500': post.platform === 'threads'
+                             }">
+                            <div class="flex-1">
+                                <div class="flex items-center space-x-2 mb-1">
+                                    <span class="text-sm" x-text="getPlatformIcon(post.platform)"></span>
+                                    <span class="text-xs font-medium px-2 py-0.5 rounded-full"
+                                          :class="{
+                                              'bg-orange-500/20 text-orange-400': post.platform === 'reddit',
+                                              'bg-blue-500/20 text-blue-400': post.platform === 'twitter',
+                                              'bg-pink-500/20 text-pink-400': post.platform === 'threads'
+                                          }"
+                                          x-text="post.platform"></span>
+                                    <span class="text-xs text-gray-500" x-text="formatScheduledTime(post.scheduledFor)"></span>
+                                </div>
+                                <p class="text-sm text-white mb-2" x-text="post.content"></p>
+                                <div class="flex items-center space-x-2">
+                                    <span class="text-xs px-2 py-0.5 rounded-full"
+                                          :class="{
+                                              'bg-yellow-500/20 text-yellow-400': post.status === 'draft',
+                                              'bg-emerald-500/20 text-emerald-400': post.status === 'scheduled',
+                                              'bg-indigo-500/20 text-indigo-400': post.status === 'published'
+                                          }"
+                                          x-text="post.status"></span>
+                                    <span x-show="post.pattern" class="text-xs text-gray-500" x-text="'Pattern: ' + post.pattern"></span>
+                                    <span x-show="post.subreddit" class="text-xs text-gray-500" x-text="'r/' + post.subreddit"></span>
+                                </div>
+                            </div>
+                            <div class="flex space-x-2 ml-4">
+                                <button @click="editPost(idx)" class="p-2 hover:bg-gray-700 rounded-lg transition-colors text-gray-400 hover:text-white">✏️</button>
+                                <button @click="deletePost(idx)" class="p-2 hover:bg-gray-700 rounded-lg transition-colors text-gray-400 hover:text-red-400">🗑️</button>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+
+        <!-- Viral Patterns Library -->
+        <div class="bg-gray-900 rounded-xl border border-gray-800">
+            <div class="p-4 border-b border-gray-800 flex items-center justify-between">
+                <div class="flex items-center space-x-2">
+                    <span class="text-xl">📚</span>
+                    <h2 class="text-lg font-semibold">Viral Patterns Library</h2>
+                </div>
+                <input type="text" placeholder="Search patterns..." 
+                       class="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm focus:outline-none focus:border-indigo-500"
+                       x-model="patternSearch">
+            </div>
+            <div class="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <template x-for="pattern in filteredPatterns" :key="pattern.name">
+                    <div @click="usePattern(pattern)" class="p-4 bg-gray-800/50 rounded-xl border border-gray-700 hover:border-indigo-500 transition-all cursor-pointer group">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center space-x-2">
+                                <span class="text-2xl" x-text="pattern.icon"></span>
+                                <h3 class="font-semibold text-white" x-text="pattern.name"></h3>
+                            </div>
+                            <span class="text-xs px-2 py-1 bg-emerald-500/20 text-emerald-400 rounded-full" 
+                                  x-text="pattern.successRate + '%'"></span>
+                        </div>
+                        <p class="text-sm text-gray-400 mb-3" x-text="pattern.description"></p>
+                        <div class="flex flex-wrap gap-1 mb-3">
+                            <template x-for="platform in pattern.platforms" :key="platform">
+                                <span class="text-xs px-2 py-0.5 rounded-full"
+                                      :class="{
+                                          'bg-orange-500/20 text-orange-400': platform === 'Reddit',
+                                          'bg-blue-500/20 text-blue-400': platform === 'X',
+                                          'bg-pink-500/20 text-pink-400': platform === 'Threads'
+                                      }"
+                                      x-text="platform"></span>
+                            </template>
+                        </div>
+                        <div class="text-xs text-gray-500 bg-gray-900/50 p-2 rounded font-mono">
+                            <span x-text="pattern.template"></span>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Draft/Edit Post Modal -->
+    <div x-show="showDraftModal" x-transition class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop" @click.self="showDraftModal = false">
+        <div class="bg-gray-900 rounded-xl border border-gray-700 w-full max-w-lg mx-4 p-6">
+            <h3 class="text-lg font-semibold mb-4" x-text="editingPostIdx !== null ? 'Edit Post' : 'New Post'"></h3>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Platform</label>
+                    <select x-model="draftPost.platform" class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm focus:outline-none focus:border-indigo-500">
+                        <option value="reddit">Reddit</option>
+                        <option value="twitter">X (Twitter)</option>
+                        <option value="threads">Threads</option>
+                    </select>
+                </div>
+                
+                <div x-show="draftPost.platform === 'reddit'">
+                    <label class="block text-sm text-gray-400 mb-1">Subreddit</label>
+                    <select x-model="draftPost.subreddit" class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm focus:outline-none focus:border-indigo-500">
+                        <template x-for="sub in subreddits" :key="sub">
+                            <option :value="sub" x-text="'r/' + sub"></option>
+                        </template>
+                    </select>
+                </div>
+                
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Content</label>
+                    <textarea x-model="draftPost.content" rows="4" class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm focus:outline-none focus:border-indigo-500" placeholder="Write your post..."></textarea>
+                    <p class="text-xs text-gray-500 mt-1" x-text="draftPost.content.length + ' characters'"></p>
+                </div>
+                
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Pattern (optional)</label>
+                    <select x-model="draftPost.pattern" class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm focus:outline-none focus:border-indigo-500">
+                        <option value="">None</option>
+                        <template x-for="pattern in viralPatterns" :key="pattern.name">
+                            <option :value="pattern.name" x-text="pattern.icon + ' ' + pattern.name"></option>
+                        </template>
+                    </select>
+                </div>
+                
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Schedule For</label>
+                    <input type="datetime-local" x-model="draftPost.scheduledFor" class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm focus:outline-none focus:border-indigo-500">
+                </div>
+                
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Status</label>
+                    <select x-model="draftPost.status" class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm focus:outline-none focus:border-indigo-500">
+                        <option value="draft">Draft</option>
+                        <option value="scheduled">Scheduled</option>
+                        <option value="published">Published</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="flex justify-end space-x-3 mt-6">
+                <button @click="showDraftModal = false" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm">Cancel</button>
+                <button @click="savePost()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-sm">Save Post</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Account Modal -->
+    <div x-show="showAccountModal" x-transition class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop" @click.self="showAccountModal = false">
+        <div class="bg-gray-900 rounded-xl border border-gray-700 w-full max-w-lg mx-4 p-6">
+            <h3 class="text-lg font-semibold mb-4">Edit Account: <span x-text="editingAccount?.platform"></span></h3>
+            
+            <div class="space-y-4" x-show="editingAccount">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Handle</label>
+                    <input type="text" x-model="editingAccount.handle" class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm focus:outline-none focus:border-indigo-500" placeholder="@username">
+                </div>
+                
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Status</label>
+                    <select x-model="editingAccount.status" class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm focus:outline-none focus:border-indigo-500">
+                        <option value="new">New</option>
+                        <option value="seasoning">Seasoning</option>
+                        <option value="ready">Ready</option>
+                    </select>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1" x-text="editingAccount?.metric1Label"></label>
+                        <input type="text" x-model="editingAccount.metric1" class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm focus:outline-none focus:border-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-400 mb-1" x-text="editingAccount?.metric2Label"></label>
+                        <input type="text" x-model="editingAccount.metric2" class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm focus:outline-none focus:border-indigo-500">
+                    </div>
+                </div>
+                
+                <div>
+                    <label class="block text-sm text-gray-400 mb-1">Health Score (0-100)</label>
+                    <input type="number" x-model="editingAccount.health" min="0" max="100" class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm focus:outline-none focus:border-indigo-500">
+                </div>
+            </div>
+            
+            <div class="flex justify-end space-x-3 mt-6">
+                <button @click="showAccountModal = false" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm">Cancel</button>
+                <button @click="saveAccount()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-sm">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="border-t border-gray-800 mt-8 py-4">
+        <div class="max-w-7xl mx-auto px-4 text-center text-xs text-gray-600">
+            WTC Social Growth Command Center v2.0 | Data from Reddit API | Built for Where to Coffee ☕
+        </div>
+    </footer>
+
+    <script>
+        function dashboard() {
+            return {
+                currentTime: '',
+                trendingFilter: 'all',
+                patternSearch: '',
+                showDraftModal: false,
+                showAccountModal: false,
+                showSubreddits: false,
+                loading: false,
+                fetchError: null,
+                editingPostIdx: null,
+                editingAccountIdx: null,
+                editingAccount: null,
+                newSubreddit: '',
+                
+                // Tracked subreddits for fetching
+                subreddits: ['coffee', 'Philippines', 'entrepreneur', 'smallbusiness', 'startups', 'CasualPH'],
+                
+                // Draft post state
+                draftPost: {
+                    platform: 'reddit',
+                    content: '',
+                    pattern: '',
+                    scheduledFor: '',
+                    status: 'draft',
+                    subreddit: 'coffee'
+                },
+
+                accounts: [
+                    { 
+                        platform: 'Reddit', 
+                        icon: '🔶', 
+                        handle: '',
+                        status: 'new',
+                        metric1Label: 'Karma',
+                        metric1: '0',
+                        metric2Label: 'Age',
+                        metric2: '0 days',
+                        health: 0
+                    },
+                    { 
+                        platform: 'X (Twitter)', 
+                        icon: '🐦', 
+                        handle: '',
+                        status: 'new',
+                        metric1Label: 'Followers',
+                        metric1: '0',
+                        metric2Label: 'Engagement',
+                        metric2: '0%',
+                        health: 0
+                    },
+                    { 
+                        platform: 'Threads', 
+                        icon: '🧵', 
+                        handle: '',
+                        status: 'new',
+                        metric1Label: 'Followers',
+                        metric1: '0',
+                        metric2Label: 'Posts',
+                        metric2: '0',
+                        health: 0
+                    }
+                ],
+
+                trendingPosts: [],
+                scheduledPosts: [],
+
+                topPatterns: [
+                    { icon: '📊', name: 'Data Thread', successRate: 78 },
+                    { icon: '📝', name: 'List Format', successRate: 85 },
+                    { icon: '🎬', name: 'Behind Scenes', successRate: 70 },
+                    { icon: '🔥', name: 'Hot Take', successRate: 65 }
+                ],
+
+                viralPatterns: [
+                    { 
+                        icon: '📊', 
+                        name: 'Data Thread', 
+                        description: 'Present research findings or analysis in thread format. Numbers + insights = engagement.',
+                        platforms: ['X', 'Reddit'],
+                        successRate: 78,
+                        template: '"I analyzed [X]. Here\'s what I found: 🧵"'
+                    },
+                    { 
+                        icon: '📝', 
+                        name: 'List Format', 
+                        description: 'Curated lists perform consistently well. Top 10, Best X, Hidden gems.',
+                        platforms: ['Reddit', 'Threads'],
+                        successRate: 85,
+                        template: '"Top [N] [things] in [place/category]"'
+                    },
+                    { 
+                        icon: '📖', 
+                        name: 'Personal Story', 
+                        description: 'Authentic journey posts. Struggles, learnings, wins.',
+                        platforms: ['Reddit', 'X', 'Threads'],
+                        successRate: 72,
+                        template: '"I [did X] for [time]. Here\'s what happened..."'
+                    },
+                    { 
+                        icon: '🔥', 
+                        name: 'Hot Take', 
+                        description: 'Controversial but defensible opinion. Sparks debate = engagement.',
+                        platforms: ['X'],
+                        successRate: 65,
+                        template: '"Unpopular opinion: [statement]. Here\'s why:"'
+                    },
+                    { 
+                        icon: '🎬', 
+                        name: 'Behind Scenes', 
+                        description: 'Show the work. Building in public. Process over polish.',
+                        platforms: ['X', 'Threads'],
+                        successRate: 70,
+                        template: '"Day [N] of building [X]: [update]"'
+                    },
+                    { 
+                        icon: '🎤', 
+                        name: 'AMA', 
+                        description: 'Ask Me Anything. Position as expert, answer questions.',
+                        platforms: ['Reddit'],
+                        successRate: 68,
+                        template: '"I\'m [credential]. AMA about [topic]"'
+                    },
+                    { 
+                        icon: '🆚', 
+                        name: 'Comparison', 
+                        description: 'X vs Y. Before/After. Old way vs New way.',
+                        platforms: ['Reddit', 'X', 'Threads'],
+                        successRate: 74,
+                        template: '"[X] vs [Y]: Which is actually better?"'
+                    },
+                    { 
+                        icon: '💡', 
+                        name: 'Problem → Solution', 
+                        description: 'Identify pain point, present solution. Classic but effective.',
+                        platforms: ['X', 'Reddit'],
+                        successRate: 71,
+                        template: '"The problem with [X] that nobody talks about (and how to fix it)"'
+                    },
+                    { 
+                        icon: '🎁', 
+                        name: 'Free Resource', 
+                        description: 'Give away something valuable. Template, guide, tool.',
+                        platforms: ['X', 'Reddit'],
+                        successRate: 82,
+                        template: '"I made a free [resource] for [audience]. Link in comments."'
+                    }
+                ],
+
+                get filteredTrending() {
+                    if (this.trendingFilter === 'all') return this.trendingPosts;
+                    return this.trendingPosts.filter(p => p.platform === this.trendingFilter);
+                },
+
+                get filteredPatterns() {
+                    if (!this.patternSearch) return this.viralPatterns;
+                    const search = this.patternSearch.toLowerCase();
+                    return this.viralPatterns.filter(p => 
+                        p.name.toLowerCase().includes(search) || 
+                        p.description.toLowerCase().includes(search)
+                    );
+                },
+
+                init() {
+                    this.updateTime();
+                    setInterval(() => this.updateTime(), 1000);
+                    this.loadFromStorage();
+                    this.refreshAll();
+                },
+
+                updateTime() {
+                    this.currentTime = new Date().toLocaleString('en-PH', { 
+                        timeZone: 'Asia/Manila',
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+                },
+
+                loadFromStorage() {
+                    try {
+                        const saved = localStorage.getItem('wtc-dashboard');
+                        if (saved) {
+                            const data = JSON.parse(saved);
+                            if (data.accounts) this.accounts = data.accounts;
+                            if (data.scheduledPosts) this.scheduledPosts = data.scheduledPosts;
+                            if (data.subreddits) this.subreddits = data.subreddits;
+                        }
+                    } catch (e) {
+                        console.error('Failed to load from storage:', e);
+                    }
+                },
+
+                saveToStorage() {
+                    try {
+                        const data = {
+                            accounts: this.accounts,
+                            scheduledPosts: this.scheduledPosts,
+                            subreddits: this.subreddits,
+                            lastUpdated: new Date().toISOString()
+                        };
+                        localStorage.setItem('wtc-dashboard', JSON.stringify(data));
+                    } catch (e) {
+                        console.error('Failed to save to storage:', e);
+                    }
+                },
+
+                async refreshAll() {
+                    this.loading = true;
+                    this.trendingPosts = [];
+                    this.fetchError = null;
+                    
+                    // Use our Vercel API route (no CORS issues)
+                    for (const sub of this.subreddits) {
+                        try {
+                            const response = await fetch(`/api/reddit?subreddit=${sub}&limit=5`);
+                            const data = await response.json();
+                            
+                            if (data.success && data.posts) {
+                                const posts = data.posts.map(post => ({
+                                    id: post.id,
+                                    platform: 'reddit',
+                                    platformIcon: '🔶',
+                                    source: `r/${post.subreddit}`,
+                                    title: post.title,
+                                    upvotes: post.upvotes,
+                                    comments: post.comments,
+                                    time: this.timeAgo(post.created * 1000),
+                                    url: `https://reddit.com${post.permalink}`,
+                                    viralScore: this.calculateViralScore({
+                                        ups: post.upvotes,
+                                        num_comments: post.comments,
+                                        upvote_ratio: post.ratio,
+                                        created_utc: post.created
+                                    })
+                                }));
+                                
+                                this.trendingPosts = [...this.trendingPosts, ...posts];
+                            }
+                        } catch (e) {
+                            console.error(`Failed to fetch r/${sub}:`, e);
+                        }
+                    }
+                    
+                    // Sort by viral score
+                    this.trendingPosts.sort((a, b) => b.viralScore - a.viralScore);
+                    
+                    // If no posts loaded, show sample data
+                    if (this.trendingPosts.length === 0) {
+                        this.fetchError = 'Could not fetch live data — showing samples. Try refreshing.';
+                        this.trendingPosts = this.getSamplePosts();
+                    }
+                    
+                    this.loading = false;
+                },
+                
+                getSamplePosts() {
+                    // Sample posts for when Reddit API is blocked
+                    return [
+                        { id: 's1', platform: 'reddit', platformIcon: '🔶', source: 'r/coffee', title: 'I spent $3000 on coffee equipment this year. Here\'s what was actually worth it.', upvotes: 4200, comments: 312, time: '2h ago', url: 'https://reddit.com/r/coffee', viralScore: 94 },
+                        { id: 's2', platform: 'reddit', platformIcon: '🔶', source: 'r/Philippines', title: 'Hidden coffee shops in Metro Manila that tourists don\'t know about', upvotes: 1900, comments: 245, time: '5h ago', url: 'https://reddit.com/r/Philippines', viralScore: 82 },
+                        { id: 's3', platform: 'reddit', platformIcon: '🔶', source: 'r/entrepreneur', title: 'I built a coffee loyalty app and got 200 cafes on waitlist before launch. AMA', upvotes: 987, comments: 145, time: '10h ago', url: 'https://reddit.com/r/entrepreneur', viralScore: 71 },
+                        { id: 's4', platform: 'reddit', platformIcon: '🔶', source: 'r/startups', title: 'The real cost of building a coffee tech startup in Southeast Asia', upvotes: 756, comments: 89, time: '12h ago', url: 'https://reddit.com/r/startups', viralScore: 65 },
+                        { id: 's5', platform: 'reddit', platformIcon: '🔶', source: 'r/smallbusiness', title: 'How we increased customer retention 5x with a simple loyalty program', upvotes: 623, comments: 67, time: '1d ago', url: 'https://reddit.com/r/smallbusiness', viralScore: 58 },
+                        { id: 's6', platform: 'reddit', platformIcon: '🔶', source: 'r/CasualPH', title: 'Best work-from-cafe spots in Makati? Need good wifi and coffee', upvotes: 445, comments: 123, time: '6h ago', url: 'https://reddit.com/r/CasualPH', viralScore: 52 }
+                    ];
+                },
+
+                calculateViralScore(postData) {
+                    const upvotes = postData.ups || 0;
+                    const comments = postData.num_comments || 0;
+                    const ratio = postData.upvote_ratio || 0.5;
+                    const ageHours = (Date.now() - postData.created_utc * 1000) / (1000 * 60 * 60);
+                    
+                    // Viral score formula: engagement per hour, weighted by ratio
+                    const engagementRate = (upvotes + comments * 2) / Math.max(ageHours, 1);
+                    const score = Math.min(99, Math.round((engagementRate * ratio) / 10));
+                    
+                    return Math.max(10, score);
+                },
+
+                timeAgo(timestamp) {
+                    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+                    if (seconds < 60) return 'just now';
+                    if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
+                    if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
+                    return Math.floor(seconds / 86400) + 'd ago';
+                },
+
+                formatNumber(num) {
+                    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+                    if (num >= 1000) return (num / 1000).toFixed(1) + 'k';
+                    return num.toString();
+                },
+
+                formatScheduledTime(dateStr) {
+                    if (!dateStr) return 'Not scheduled';
+                    const date = new Date(dateStr);
+                    return date.toLocaleString('en-PH', {
+                        timeZone: 'Asia/Manila',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    }) + ' PHT';
+                },
+
+                getPlatformIcon(platform) {
+                    const icons = { reddit: '🔶', twitter: '🐦', threads: '🧵' };
+                    return icons[platform] || '📱';
+                },
+
+                openDraftModal() {
+                    this.editingPostIdx = null;
+                    this.draftPost = {
+                        platform: 'reddit',
+                        content: '',
+                        pattern: '',
+                        scheduledFor: '',
+                        status: 'draft',
+                        subreddit: this.subreddits[0] || 'coffee'
+                    };
+                    this.showDraftModal = true;
+                },
+
+                editPost(idx) {
+                    this.editingPostIdx = idx;
+                    this.draftPost = { ...this.scheduledPosts[idx] };
+                    this.showDraftModal = true;
+                },
+
+                savePost() {
+                    if (!this.draftPost.content.trim()) {
+                        alert('Please enter post content');
+                        return;
+                    }
+                    
+                    if (this.editingPostIdx !== null) {
+                        this.scheduledPosts[this.editingPostIdx] = { ...this.draftPost };
+                    } else {
+                        this.scheduledPosts.push({
+                            ...this.draftPost,
+                            id: Date.now()
+                        });
+                    }
+                    
+                    this.saveToStorage();
+                    this.showDraftModal = false;
+                },
+
+                deletePost(idx) {
+                    if (confirm('Delete this post?')) {
+                        this.scheduledPosts.splice(idx, 1);
+                        this.saveToStorage();
+                    }
+                },
+
+                editAccount(idx) {
+                    this.editingAccountIdx = idx;
+                    this.editingAccount = { ...this.accounts[idx] };
+                    this.showAccountModal = true;
+                },
+
+                saveAccount() {
+                    if (this.editingAccountIdx !== null && this.editingAccount) {
+                        this.accounts[this.editingAccountIdx] = { ...this.editingAccount };
+                        this.saveToStorage();
+                    }
+                    this.showAccountModal = false;
+                },
+
+                addSubreddit() {
+                    const sub = this.newSubreddit.trim().replace(/^r\//, '');
+                    if (sub && !this.subreddits.includes(sub)) {
+                        this.subreddits.push(sub);
+                        this.newSubreddit = '';
+                        this.saveToStorage();
+                    }
+                },
+
+                removeSubreddit(idx) {
+                    this.subreddits.splice(idx, 1);
+                    this.saveToStorage();
+                },
+
+                usePattern(pattern) {
+                    this.draftPost = {
+                        platform: pattern.platforms.includes('Reddit') ? 'reddit' : 'twitter',
+                        content: pattern.template,
+                        pattern: pattern.name,
+                        scheduledFor: '',
+                        status: 'draft',
+                        subreddit: this.subreddits[0] || 'coffee'
+                    };
+                    this.editingPostIdx = null;
+                    this.showDraftModal = true;
+                },
+
+                remixPost(post) {
+                    this.draftPost = {
+                        platform: 'reddit',
+                        content: `Inspired by: ${post.title}\n\n[Your take here]`,
+                        pattern: '',
+                        scheduledFor: '',
+                        status: 'draft',
+                        subreddit: post.source.replace('r/', '')
+                    };
+                    this.editingPostIdx = null;
+                    this.showDraftModal = true;
+                },
+
+                exportData() {
+                    const data = {
+                        accounts: this.accounts,
+                        scheduledPosts: this.scheduledPosts,
+                        subreddits: this.subreddits,
+                        exportedAt: new Date().toISOString()
+                    };
+                    
+                    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'wtc-dashboard-export.json';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                }
+            }
+        }
+    </script>
+</body>
+</html>
